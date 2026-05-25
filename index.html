@@ -309,6 +309,22 @@ select option{background:var(--s2);}
         <div class="pnl"><div class="pnl-t">This month</div><div id="inc-list"></div></div>
         <div class="pnl"><div class="pnl-t">Monthly trend</div><div style="position:relative;height:220px"><canvas id="inc-trend-c"></canvas></div></div>
       </div>
+
+      <!-- SAVINGS INTEREST PROJECTOR -->
+      <div class="pnl" style="margin-bottom:20px;">
+        <div class="pnl-t">Savings Account Projector <span style="font-family:var(--fb);font-size:10px;color:var(--muted2);text-transform:none;letter-spacing:0;font-weight:400;">— interest your balance earns</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px;">
+          <div class="fg">
+            <label>Current savings balance ($)</label>
+            <input type="number" id="sav-balance" placeholder="e.g. 10000" min="0" step="100" oninput="renderSavingsProjector()">
+          </div>
+          <div class="fg">
+            <label>APY (%) — e.g. HYSA, CD</label>
+            <input type="number" id="sav-apy" placeholder="e.g. 4.50" min="0" step="0.01" max="20" oninput="renderSavingsProjector()">
+          </div>
+        </div>
+        <div id="sav-projector-out"></div>
+      </div>
     </div>
 
     <!-- STOCKS -->
@@ -357,6 +373,24 @@ select option{background:var(--s2);}
         <div class="pnl"><div class="pnl-t">Balance breakdown</div><div style="position:relative;height:220px"><canvas id="cc-chart"></canvas></div></div>
       </div>
       <div class="pnl"><div class="pnl-t">All Cards</div><div id="cc-list"></div></div>
+
+      <!-- CREDIT SCORE TRACKER -->
+      <div class="pnl" style="margin-top:20px;">
+        <div class="pnl-t">Credit Score History <span style="margin-left:auto"><button class="btn btn-sm btn-p" onclick="openM('m-score')">+ Log Score</button></span></div>
+        <div id="cs-gauge-row" style="display:flex;align-items:center;gap:28px;padding:20px 0 14px;flex-wrap:wrap;">
+          <div style="position:relative;width:160px;height:88px;flex-shrink:0;">
+            <canvas id="cs-gauge-c" width="160" height="88"></canvas>
+            <div style="position:absolute;bottom:0;left:0;right:0;text-align:center;">
+              <div id="cs-score-num" style="font-family:var(--fh);font-size:28px;font-weight:800;line-height:1;"></div>
+              <div id="cs-score-band" style="font-size:10px;font-family:var(--fm);text-transform:uppercase;letter-spacing:1px;margin-top:2px;"></div>
+            </div>
+          </div>
+          <div id="cs-stats" style="flex:1;min-width:180px;"></div>
+        </div>
+        <div style="position:relative;height:160px;margin-bottom:14px;"><canvas id="cs-trend-c"></canvas></div>
+        <div id="cs-util-tip" style="margin-bottom:14px;"></div>
+        <div id="cs-history-list" style="max-height:220px;overflow-y:auto;"></div>
+      </div>
     </div>
 
     <!-- SUBSCRIPTIONS -->
@@ -441,7 +475,7 @@ select option{background:var(--s2);}
   </div>
 </div>
 
-
+<div class="mbg" id="m-tx">
   <div class="modal">
     <div class="mhd"><div class="mt">Add Transaction</div><button class="mx" onclick="closeM('m-tx')">✕</button></div>
     <div class="fgrid">
@@ -511,6 +545,23 @@ select option{background:var(--s2);}
       <div class="fg"><label>Notes</label><input id="inv-notes" placeholder="e.g. monthly DCA"></div>
     </div>
     <div class="brow"><button class="btn btn-p" onclick="saveInv()">Save</button><button class="btn" onclick="closeM('m-inv')">Cancel</button></div>
+  </div>
+</div>
+
+<div class="mbg" id="m-score">
+  <div class="modal">
+    <div class="mhd"><div class="mt">Log Credit Score</div><button class="mx" onclick="closeM('m-score')">✕</button></div>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:18px;">
+      <div class="fg"><label>Score (300–850)</label><input type="number" id="cs-score-input" placeholder="e.g. 720" min="300" max="850"></div>
+      <div class="fg"><label>Date</label><input type="date" id="cs-date-input"></div>
+      <div class="fg"><label>Source</label>
+        <select id="cs-source-input">
+          <option>Credit Karma</option><option>Experian</option><option>Equifax</option><option>TransUnion</option><option>Bank App</option><option>Other</option>
+        </select>
+      </div>
+      <div class="fg"><label>Notes (optional)</label><input id="cs-notes-input" placeholder="e.g. Paid off card, new hard inquiry"></div>
+    </div>
+    <div class="brow"><button class="btn btn-p" onclick="saveScore()">Save</button><button class="btn" onclick="closeM('m-score')">Cancel</button></div>
   </div>
 </div>
 
@@ -869,6 +920,50 @@ async function renderIncome() {
   }, { plugins: { legend: { labels: { color: '#8080a8', font: { size: 10 } } } }, scales: scalesOpts() });
 }
 function setIncMonth(m) { activeMonth['income'] = m; renderIncome(); }
+
+// ═══════════════════════════════════════
+//  SAVINGS INTEREST PROJECTOR
+// ═══════════════════════════════════════
+function renderSavingsProjector() {
+  const out = document.getElementById('sav-projector-out');
+  if (!out) return;
+  const balance = parseFloat(document.getElementById('sav-balance')?.value) || 0;
+  const apy     = parseFloat(document.getElementById('sav-apy')?.value)     || 0;
+  if (!balance || !apy) {
+    out.innerHTML = '<div style="font-size:12px;color:var(--muted2);padding:8px 0;">Enter your balance and APY above to see projections.</div>';
+    return;
+  }
+  function compound(P, rate, years) {
+    return P * Math.pow(1 + rate / 365, 365 * years) - P;
+  }
+  const r = apy / 100;
+  const moI  = compound(balance, r, 1/12);
+  const yrI  = compound(balance, r, 1);
+  const y3I  = compound(balance, r, 3);
+  const y5I  = compound(balance, r, 5);
+  const y10I = compound(balance, r, 10);
+  const items = [
+    { label:'Per month',  val:moI,  sub:'interest earned' },
+    { label:'Per year',   val:yrI,  sub:apy+'% APY' },
+    { label:'3 years',    val:y3I,  sub:'compounded daily' },
+    { label:'5 years',    val:y5I,  sub:'compounded daily' },
+    { label:'10 years',   val:y10I, sub:'compounded daily' },
+  ];
+  out.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px;">' +
+    items.map(item =>
+      '<div style="background:var(--s2);border:1px solid var(--border);border-radius:var(--rs);padding:14px 16px;">' +
+        '<div style="font-size:9px;font-family:var(--fm);text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:7px;">' + item.label + '</div>' +
+        '<div style="font-family:var(--fh);font-size:20px;font-weight:800;color:var(--green);letter-spacing:-.5px;">+$' + fmt(item.val) + '</div>' +
+        '<div style="font-size:10px;color:var(--muted2);margin-top:3px;">' + item.sub + '</div>' +
+      '</div>'
+    ).join('') +
+  '</div>' +
+  '<div style="background:var(--s2);border:1px solid var(--border2);border-radius:var(--rs);padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">' +
+    '<div><div style="font-size:11px;color:var(--muted2);margin-bottom:3px;">Balance after 1 yr</div><div style="font-family:var(--fh);font-size:17px;font-weight:700;color:var(--accent2);">$' + fmt(balance + yrI) + '</div></div>' +
+    '<div><div style="font-size:11px;color:var(--muted2);margin-bottom:3px;">Balance after 5 yrs</div><div style="font-family:var(--fh);font-size:17px;font-weight:700;color:var(--accent2);">$' + fmt(balance + y5I) + '</div></div>' +
+    '<div><div style="font-size:11px;color:var(--muted2);margin-bottom:3px;">Balance after 10 yrs</div><div style="font-family:var(--fh);font-size:17px;font-weight:700;color:var(--purple);">$' + fmt(balance + y10I) + '</div></div>' +
+  '</div>';
+}
 async function saveIncome() {
   const m = document.getElementById('inc-month').value;
   const amt = parseFloat(document.getElementById('inc-amt').value);
@@ -888,6 +983,11 @@ function openM(id) {
   const map = { 'm-income': 'inc-month', 'm-tx': 'tx-month', 'm-budget': 'bud-month' };
   if (map[id]) document.getElementById(map[id]).value = m;
   if (id === 'm-tx') document.getElementById('tx-date').value = new Date().toISOString().slice(0, 10);
+  if (id === 'm-score') {
+    document.getElementById('cs-date-input').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('cs-score-input').value = '';
+    document.getElementById('cs-notes-input').value = '';
+  }
   document.getElementById(id).classList.add('on');
 }
 function closeM(id) { document.getElementById(id).classList.remove('on'); }
@@ -989,50 +1089,53 @@ async function renderSubscriptions() {
   const totalMo = subs.reduce((s, sub) => s + sub.monthlyCost, 0);
 
   document.getElementById('subs-summary-cards').innerHTML = [
-    { l: 'Detected', v: subs.length, c: 'vb' },
-    { l: 'Monthly cost', v: '$' + fmt(totalMo), c: 'vr' },
-    { l: 'Yearly cost', v: '$' + fmt(totalMo * 12), c: 'vo' },
-    { l: 'Avg per sub', v: subs.length ? '$' + fmt(totalMo / subs.length) : '$0', c: '' },
-  ].map(c => `<div class="card"><div class="cl">${c.l}</div><div class="cv ${c.c}">${c.v}</div></div>`).join('');
+    { l: 'Detected', v: subs.length, c: 'vb', s: 'recurring charges' },
+    { l: 'Monthly cost', v: '$' + fmt(totalMo), c: 'vr', s: 'per month' },
+    { l: 'Yearly cost', v: '$' + fmt(totalMo * 12), c: 'vo', s: 'per year' },
+    { l: 'Avg per sub', v: subs.length ? '$' + fmt(totalMo / subs.length) : '$0', c: '', s: 'monthly avg' },
+  ].map(c => `<div class="card"><div class="cl">${c.l}</div><div class="cv ${c.c}">${c.v}</div><div class="cs">${c.s}</div></div>`).join('');
 
   const wrap = document.getElementById('subs-wrap');
   if (!subs.length) {
-    wrap.innerHTML = `<div class="pnl"><div class="pnl-t">Detected Subscriptions</div><div class="empty">No recurring charges detected yet.<br>Needs 3+ charges at the same price from the same merchant.</div></div>`;
+    wrap.innerHTML = `<div class="pnl"><div class="pnl-t">Detected Subscriptions</div><div class="empty" style="padding:48px 20px;"><div style="font-size:28px;margin-bottom:10px;">🔍</div><div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:5px;">No recurring charges detected yet</div><div style="font-size:12px;color:var(--muted2);line-height:1.7;">Needs 3+ charges at the same price from the same merchant across different months.</div></div></div>`;
     return;
   }
 
-  const fc = { 'Weekly':'var(--red)', 'Biweekly':'var(--orange)', 'Monthly':'var(--accent2)', 'Quarterly':'var(--purple)', 'Yearly':'var(--green)' };
-  wrap.innerHTML = `
-    <div class="pnl">
-      <div class="pnl-t">Detected Subscriptions
-        <span style="font-family:var(--fm);color:var(--muted2);font-size:9px;">same-price recurring · hit ✕ to dismiss false positives</span>
+  const today = new Date();
+  const freqColor = { Weekly:'var(--red)', Biweekly:'var(--orange)', Monthly:'var(--accent2)', Quarterly:'var(--purple)', Yearly:'var(--green)' };
+
+  const rows = subs.map(sub => {
+    const lastStr = (sub.lastDate.toISOString ? sub.lastDate.toISOString() : String(sub.lastDate)).slice(0,10);
+    const nextStr = sub.nextDate.toISOString().slice(0,10);
+    const days = Math.round((sub.nextDate - today) / 86400000);
+    const dueColor = days <= 3 ? 'var(--red)' : days <= 7 ? 'var(--orange)' : 'var(--muted2)';
+    const dueTxt = days < 0 ? 'overdue' : days === 0 ? 'today' : days === 1 ? 'tomorrow' : 'in ' + days + 'd';
+    const fc = freqColor[sub.freqLabel] || 'var(--muted2)';
+    const key = sub.merchant.replace(/'/g, "\\'");
+    return `<div style="display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--border);transition:background .1s;" onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background='transparent'">
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+          <span style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${sub.merchant}</span>
+          <span style="font-size:9px;font-family:var(--fm);padding:2px 7px;border-radius:100px;background:${fc}18;color:${fc};border:1px solid ${fc}30;flex-shrink:0;">${sub.freqLabel}</span>
+        </div>
+        <div style="font-size:11px;color:var(--muted2);">Last: ${lastStr} · Next: <span style="color:${dueColor};font-weight:500;">${nextStr} (${dueTxt})</span> · ${sub.count} charges</div>
       </div>
-      <div style="overflow-x:auto;">
-        <table class="tbl">
-          <thead><tr><th>Merchant</th><th>Frequency</th><th>Amount</th><th>Last Charged</th><th>Next Expected</th><th>Total Spent</th><th>Monthly Cost</th><th></th></tr></thead>
-          <tbody>${subs.map(sub => {
-            const c = fc[sub.freqLabel] || 'var(--muted2)';
-            const lastStr = sub.lastDate.toISOString ? sub.lastDate.toISOString().slice(0,10) : String(sub.lastDate).slice(0,10);
-            const nextStr = sub.nextDate.toISOString().slice(0,10);
-            const days = Math.round((sub.nextDate - new Date()) / 86400000);
-            const nc = days <= 3 ? 'var(--red)' : days <= 5 ? 'var(--orange)' : 'var(--muted2)';
-            const warn = days >= 0 && days <= 7 ? ' ⚠' : '';
-            const key = sub.merchant.replace(/'/g, "\\'");
-            return `<tr>
-              <td style="font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${sub.merchant}">${sub.merchant}</td>
-              <td><span class="chip" style="background:${c}18;color:${c};border:1px solid ${c}30;">${sub.freqLabel}</span></td>
-              <td style="font-family:var(--fm);">$${sub.amount.toFixed(2)}</td>
-              <td style="font-family:var(--fm);font-size:11px;color:var(--muted2);">${lastStr}</td>
-              <td style="font-family:var(--fm);font-size:11px;color:${nc};">${nextStr}${warn}</td>
-              <td style="font-family:var(--fm);color:var(--muted2);">$${fmt(sub.totalSpent)}</td>
-              <td style="font-family:var(--fm);font-weight:600;color:var(--red);">$${sub.monthlyCost.toFixed(2)}</td>
-              <td><button class="btn btn-sm btn-d" onclick="dismissSub('${key}')" title="Not a subscription">✕</button></td>
-            </tr>`;
-          }).join('')}</tbody>
-        </table>
+      <div style="text-align:right;flex-shrink:0;margin-right:6px;">
+        <div style="font-family:var(--fh);font-size:15px;font-weight:700;color:var(--red);">$${sub.amount.toFixed(2)}</div>
+        <div style="font-size:10px;color:var(--muted2);">$${sub.monthlyCost.toFixed(2)}/mo</div>
       </div>
-      ${dismissed.size ? `<div style="margin-top:12px;font-size:11px;color:var(--muted2);">${dismissed.size} dismissed · <button onclick="localStorage.removeItem('flow_dismissed_subs');renderSubscriptions();" style="background:none;border:none;color:var(--accent2);cursor:pointer;font-size:11px;">restore all</button></div>` : ''}
+      <button onclick="dismissSub('${key}')" title="Not a subscription — dismiss" style="flex-shrink:0;background:var(--s3);border:1px solid var(--border2);color:var(--muted2);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:11px;transition:all .15s;white-space:nowrap;" onmouseover="this.style.background='rgba(244,86,106,.12)';this.style.color='var(--red)';this.style.borderColor='rgba(244,86,106,.4)'" onmouseout="this.style.background='var(--s3)';this.style.color='var(--muted2)';this.style.borderColor='var(--border2)'">✕ Not a sub</button>
     </div>`;
+  }).join('');
+
+  wrap.innerHTML = `<div class="pnl" style="padding:0;overflow:hidden;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);">
+      <div style="font-size:9px;font-family:var(--fm);text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);">All Subscriptions · sorted by monthly cost</div>
+      ${dismissed.size ? `<button onclick="localStorage.removeItem('flow_dismissed_subs');renderSubscriptions();" style="background:none;border:none;color:var(--accent2);cursor:pointer;font-size:11px;">${dismissed.size} dismissed — restore all</button>` : ''}
+    </div>
+    ${rows}
+  </div>`;
+}
 }
 
 // ═══════════════════════════════════════
@@ -1915,6 +2018,8 @@ async function renderCards() {
           </td>
         </tr>`;
       }).join('')}</tbody></table></div>`;
+
+  await renderCreditScores(list);
 }
 
 async function saveCard() {
@@ -2031,6 +2136,156 @@ function startStockRefresh() {
 function stopStockRefresh() {
   if (stockRefreshInterval) clearInterval(stockRefreshInterval);
 }
+// ═══════════════════════════════════════
+//  CREDIT SCORE TRACKER
+// ═══════════════════════════════════════
+function scoreBand(s) {
+  if (s >= 800) return { label: 'Exceptional', color: '#1fd890' };
+  if (s >= 740) return { label: 'Very Good',   color: '#1fd890' };
+  if (s >= 670) return { label: 'Good',         color: '#f5a623' };
+  if (s >= 580) return { label: 'Fair',          color: '#f5a623' };
+  return { label: 'Poor', color: '#f4566a' };
+}
+
+function drawGauge(score) {
+  const canvas = document.getElementById('cs-gauge-c');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = 160, H = 88;
+  ctx.clearRect(0, 0, W, H);
+  const cx = W / 2, cy = H - 4, r = 72;
+  const minA = Math.PI, maxA = 2 * Math.PI;
+  ctx.beginPath(); ctx.arc(cx, cy, r, minA, maxA);
+  ctx.lineWidth = 13; ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineCap = 'round'; ctx.stroke();
+  const bands = [
+    { from: 300, to: 580, color: '#f4566a' },
+    { from: 580, to: 670, color: '#f5a623' },
+    { from: 670, to: 740, color: '#f0d060' },
+    { from: 740, to: 800, color: '#1fd890' },
+    { from: 800, to: 850, color: '#5b6af8' },
+  ];
+  const toAngle = s => minA + ((s - 300) / 550) * Math.PI;
+  bands.forEach(b => {
+    ctx.beginPath(); ctx.arc(cx, cy, r, toAngle(b.from), toAngle(b.to));
+    ctx.lineWidth = 13; ctx.strokeStyle = b.color + 'aa'; ctx.lineCap = 'butt'; ctx.stroke();
+  });
+  if (!score) return;
+  const band = scoreBand(score);
+  ctx.beginPath(); ctx.arc(cx, cy, r, minA, toAngle(Math.min(score, 850)));
+  ctx.lineWidth = 13; ctx.strokeStyle = band.color; ctx.lineCap = 'round'; ctx.stroke();
+  const needleAngle = toAngle(score);
+  const nx = cx + r * Math.cos(needleAngle);
+  const ny = cy + r * Math.sin(needleAngle);
+  ctx.beginPath(); ctx.arc(nx, ny, 6, 0, 2 * Math.PI);
+  ctx.fillStyle = '#fff'; ctx.fill();
+}
+
+async function renderCreditScores(cards) {
+  const { data: scores } = await db.from('credit_scores')
+    .select('*').eq('user_id', USER.id).order('date', { ascending: true });
+  const list = scores || [];
+  const latest = list[list.length - 1];
+
+  if (latest) {
+    const band = scoreBand(Number(latest.score));
+    drawGauge(Number(latest.score));
+    document.getElementById('cs-score-num').textContent = latest.score;
+    document.getElementById('cs-score-num').style.color = band.color;
+    document.getElementById('cs-score-band').textContent = band.label;
+    document.getElementById('cs-score-band').style.color = band.color;
+  } else {
+    drawGauge(null);
+    document.getElementById('cs-score-num').textContent = '—';
+    document.getElementById('cs-score-band').textContent = 'No data yet';
+    document.getElementById('cs-score-band').style.color = 'var(--muted2)';
+  }
+
+  const totalLim = (cards || []).reduce((s, c) => s + Number(c.credit_limit), 0);
+  const totalBal = (cards || []).reduce((s, c) => s + Number(c.balance), 0);
+  const util = totalLim > 0 ? ((totalBal / totalLim) * 100).toFixed(1) : null;
+  const prev = list.length >= 2 ? list[list.length - 2] : null;
+  const change = prev && latest ? Number(latest.score) - Number(prev.score) : null;
+
+  document.getElementById('cs-stats').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div style="background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:12px;">
+        <div style="font-size:9px;font-family:var(--fm);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Last logged</div>
+        <div style="font-size:13px;font-weight:600;">${latest ? latest.date : '—'}</div>
+        <div style="font-size:10px;color:var(--muted2);">${latest ? latest.source : 'Add your first score'}</div>
+      </div>
+      <div style="background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:12px;">
+        <div style="font-size:9px;font-family:var(--fm);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Change</div>
+        <div style="font-size:13px;font-weight:600;color:${change === null ? 'var(--muted2)' : change >= 0 ? 'var(--green)' : 'var(--red)'};">${change === null ? '—' : (change >= 0 ? '+' : '') + change + ' pts'}</div>
+        <div style="font-size:10px;color:var(--muted2);">vs previous</div>
+      </div>
+      <div style="background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:12px;">
+        <div style="font-size:9px;font-family:var(--fm);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Utilization</div>
+        <div style="font-size:13px;font-weight:600;color:${!util ? 'var(--muted2)' : util > 30 ? 'var(--red)' : util > 10 ? 'var(--orange)' : 'var(--green)'};">${util !== null ? util + '%' : '—'}</div>
+        <div style="font-size:10px;color:var(--muted2);">${util > 30 ? 'hurting score' : util > 10 ? 'moderate impact' : 'healthy'}</div>
+      </div>
+      <div style="background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:12px;">
+        <div style="font-size:9px;font-family:var(--fm);color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Entries</div>
+        <div style="font-size:13px;font-weight:600;">${list.length}</div>
+        <div style="font-size:10px;color:var(--muted2);">logged scores</div>
+      </div>
+    </div>`;
+
+  const tipEl = document.getElementById('cs-util-tip');
+  if (util !== null) {
+    const tipColor = util > 30 ? 'var(--red)' : util > 10 ? 'var(--orange)' : 'var(--green)';
+    const tipMsg = util > 30
+      ? `Your utilization is ${util}% — above the 30% threshold that hurts scores. Paying down $${fmt(totalBal - totalLim * 0.3)} would bring you under 30%.`
+      : util > 10
+      ? `Utilization at ${util}%. Under 10% is ideal — $${fmt(totalBal - totalLim * 0.1)} away from that target.`
+      : `Utilization at ${util}% — excellent. Keeping it here helps your score.`;
+    tipEl.innerHTML = `<div style="padding:12px 16px;background:${tipColor}10;border:1px solid ${tipColor}30;border-left:3px solid ${tipColor};border-radius:10px;font-size:12px;color:var(--muted2);line-height:1.6;"><span style="font-weight:600;color:${tipColor};">💳 Utilization tip: </span>${tipMsg}</div>`;
+  } else { tipEl.innerHTML = ''; }
+
+  const trendCanvas = document.getElementById('cs-trend-c');
+  if (trendCanvas) trendCanvas.style.display = list.length >= 2 ? 'block' : 'none';
+  if (list.length >= 2) {
+    dChart('cs-trend-c', 'line', {
+      labels: list.map(s => s.date),
+      datasets: [{ data: list.map(s => Number(s.score)), borderColor: '#5b6af8', backgroundColor: 'rgba(91,106,248,0.07)', fill: true, tension: 0.35, pointRadius: 4, pointBackgroundColor: '#5b6af8', borderWidth: 2 }]
+    }, { plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => 'Score: ' + c.raw } } }, scales: {
+      x: { ticks: { color: '#50506e', font: { size: 10 } }, grid: { display: false } },
+      y: { min: 300, max: 850, ticks: { color: '#50506e', font: { size: 10 }, callback: v => v }, grid: { color: 'rgba(255,255,255,0.03)' } }
+    }});
+  }
+
+  document.getElementById('cs-history-list').innerHTML = !list.length
+    ? `<div class="empty">No scores logged yet. Hit "+ Log Score" to start tracking.</div>`
+    : `<table class="tbl"><thead><tr><th>Date</th><th>Score</th><th>Band</th><th>Source</th><th>Notes</th><th></th></tr></thead>
+      <tbody>${[...list].reverse().map(s => {
+        const b = scoreBand(Number(s.score));
+        return `<tr>
+          <td style="font-family:var(--fm);font-size:11px;color:var(--muted2);">${s.date}</td>
+          <td style="font-family:var(--fh);font-size:15px;font-weight:700;color:${b.color};">${s.score}</td>
+          <td><span class="chip" style="background:${b.color}18;color:${b.color};border:1px solid ${b.color}30;">${b.label}</span></td>
+          <td style="font-size:11px;color:var(--muted2);">${s.source || '—'}</td>
+          <td style="font-size:11px;color:var(--muted2);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.notes || '—'}</td>
+          <td><button class="btn btn-sm btn-d" onclick="deleteScore('${s.id}')">✕</button></td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+}
+
+async function saveScore() {
+  const score = parseInt(document.getElementById('cs-score-input').value);
+  const date  = document.getElementById('cs-date-input').value;
+  const source = document.getElementById('cs-source-input').value;
+  const notes = document.getElementById('cs-notes-input').value.trim();
+  if (!score || score < 300 || score > 850) { toast('Enter a valid score (300–850)'); return; }
+  if (!date) { toast('Pick a date'); return; }
+  const { error } = await db.from('credit_scores').insert({ user_id: USER.id, score, date, source, notes });
+  if (error) { toast('Error: ' + error.message); return; }
+  closeM('m-score'); toast('Score logged ✓'); renderCards();
+}
+
+async function deleteScore(id) {
+  await db.from('credit_scores').delete().eq('id', id).eq('user_id', USER.id);
+  toast('Removed'); renderCards();
+}
+
 //  BOOT
 // ═══════════════════════════════════════
 initAuth();
